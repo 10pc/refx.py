@@ -28,6 +28,8 @@ from app.utils import pymysql_encode
 
 # from dataclasses import dataclass
 
+__all__ = ("ensure_local_osu_file", "RankedStatus", "Beatmap", "BeatmapSet")
+
 BEATMAPS_PATH = Path.cwd() / ".data/osu"
 
 DEFAULT_LAST_UPDATE = datetime(1970, 1, 1)
@@ -89,6 +91,34 @@ def disk_has_expected_osu_file(
 def write_osu_file_to_disk(beatmap_id: int, data: bytes) -> None:
     osu_file_path = BEATMAPS_PATH / f"{beatmap_id}.osu"
     osu_file_path.write_bytes(data)
+
+async def ensure_local_osu_file(
+    osu_file_path: Path,
+    bmap_id: int,
+    bmap_md5: str,
+) -> bool:
+    """Ensure we have the latest .osu file locally,
+    downloading it from the osu!api if required."""
+    if (
+        not osu_file_path.exists()
+        or hashlib.md5(osu_file_path.read_bytes()).hexdigest() != bmap_md5
+    ):
+        # need to get the file from the osu!api
+        if app.settings.DEBUG:
+            log(f"Doing osu!api (.osu file) request {bmap_id}", Ansi.LMAGENTA)
+
+        url = f"https://old.ppy.sh/osu/{bmap_id}"
+        response = await app.state.services.http_client.get(url)
+        if response.status_code != 200:
+            if 400 <= response.status_code < 500:
+                # client error, report this to cmyui
+                stacktrace = app.utils.get_appropriate_stacktrace()
+                await app.state.services.log_strange_occurrence(stacktrace)
+            return False
+
+        osu_file_path.write_bytes(response.read())
+
+    return True
 
 
 async def ensure_osu_file_is_available(

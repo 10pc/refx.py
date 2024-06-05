@@ -666,25 +666,16 @@ async def handle_osu_login_request(
             "osu_token": "invalid-request",
             "response_body": (
                 app.packets.login_reply(LoginFailureReason.AUTHENTICATION_FAILED)
-                + app.packets.notification("Please restart your osu! and try again.")
+                + app.packets.notification(osu_version)
             ),
         }
 
-    if app.settings.DISALLOW_OLD_CLIENTS:
-        allowed_client_versions = await get_allowed_client_versions(
-            osu_version.stream,
-        )
-        # in the case where the osu! api fails, we'll allow the client to connect
-        if (
-            allowed_client_versions is not None
-            and osu_version.date not in allowed_client_versions
-        ):
+    # dev account
+    if login_data["username"] != '10pc':
+        if login_data["osu_version"] != 'b19890415.2':
             return {
-                "osu_token": "client-too-old",
-                "response_body": (
-                    app.packets.version_update()
-                    + app.packets.login_reply(LoginFailureReason.OLD_CLIENT)
-                ),
+                "osu_token": "no",
+                "response_body": (app.packets.notification("Unknown client! please use the re;fx client.")),
             }
 
     adapters, running_under_wine = parse_adapters_string(login_data["adapters_str"])
