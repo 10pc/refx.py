@@ -78,12 +78,7 @@ DISK_CHAT_LOG_FILE = ".data/logs/chat.log"
 BASE_DOMAIN = app.settings.DOMAIN
 
 # TODO: dear god
-NOW_PLAYING_RGX = re.compile(
-    r"^\x01ACTION is (?:playing|editing|watching|listening to) "
-    rf"\[https://osu\.(?:{re.escape(BASE_DOMAIN)}|ppy\.sh)/beatmapsets/(?P<sid>\d{{1,10}})#/?(?:osu|taiko|fruits|mania)?/(?P<bid>\d{{1,10}})/? .+\]"
-    r"(?: <(?P<mode_vn>Taiko|CatchTheBeat|osu!mania)>)?"
-    r"(?P<mods>(?: (?:-|\+|~|\|)\w+(?:~|\|)?)+)?\x01$",
-)
+NOW_PLAYING_RGX = re.compile(r'^ACTION is (?:playing|editing|watching|listening to) \[(?:.*?)(\d+)\s.*\]')
 
 FIRST_USER_ID = 3
 
@@ -394,31 +389,39 @@ class SendMessage(BasePacket):
             # check if the user is /np'ing a map.
             # even though this is a public channel,
             # we'll update the player's last np stored.
-            r_match = NOW_PLAYING_RGX.match(msg)
-            if r_match:
+            shebang = msg.find('#/')
+            bee = msg.find('b/')
+
+            if shebang != -1:
+                sub_string = msg[shebang + 2:]
+                next_space_index = sub_string.find(' ')
+                if next_space_index != -1:
+                    bid = sub_string[:next_space_index]
+                    log(f"bid: {bid}", Ansi.LCYAN)
+                else:
+                    log(f"space not found", Ansi.LCYAN)
+                    bid = '1000'
+            elif bee != -1:
+                sub_string = msg[bee + 2:]
+                next_space_index = sub_string.find(' ')
+                if next_space_index != -1:
+                    bid = sub_string[:next_space_index]
+                    log(f"bid: {bid}", Ansi.LCYAN)
+                else:
+                    log(f"space not found", Ansi.LCYAN)
+                    bid = '1000'
+
+            if bid:
                 # the player is /np'ing a map.
                 # save it to their player instance
                 # so we can use this elsewhere owo..
-                bmap = await Beatmap.from_bid(int(r_match["bid"]))
+                bmap = await Beatmap.from_bid(int(bid))
 
                 if bmap:
-                    # parse mode_vn int from regex
-                    if r_match["mode_vn"] is not None:
-                        mode_vn = {"Taiko": 1, "CatchTheBeat": 2, "osu!mania": 3}[
-                            r_match["mode_vn"]
-                        ]
-                    else:
-                        # use player mode if not specified
-                        mode_vn = player.status.mode.as_vanilla
-
-                    # parse the mods from regex
-                    mods = None
-                    if r_match["mods"] is not None:
-                        mods = Mods.from_np(r_match["mods"][1:], mode_vn)
+                    mode_vn = player.status.mode.as_vanilla
 
                     player.last_np = {
                         "bmap": bmap,
-                        "mods": mods,
                         "mode_vn": mode_vn,
                         "timeout": time.time() + 300,  # /np's last 5mins
                     }
@@ -427,6 +430,7 @@ class SendMessage(BasePacket):
                     player.last_np = None
 
             t_chan.send(msg, sender=player)
+            log(f"{msg}", Ansi.LCYAN)
 
         player.update_latest_activity_soon()
 
