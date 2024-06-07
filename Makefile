@@ -5,6 +5,8 @@ build:
 	docker build -t bancho:latest .
 
 run:
+	if [ -d ".dbdata" ]; then sudo chmod -R 755 .dbdata; fi
+	docker build -t bancho:latest .
 	docker compose up bancho mysql redis
 
 run-bg:

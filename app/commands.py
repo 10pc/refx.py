@@ -9,6 +9,7 @@ import signal
 import time
 import traceback
 import uuid
+import requests as apireq
 from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Mapping
@@ -463,7 +464,7 @@ def parse__with__command_args(
 @command(Privileges.UNRESTRICTED, aliases=["w"], hidden=True)
 async def _with(ctx: Context) -> str | None:
     """Specify custom accuracy & mod combinations with `/np`."""
-    if ctx.recipient is not app.state.sessions.bot:
+    if ctx.recipient != app.state.sessions.bot:
         return "This command can only be used in DM with bot."
 
     if ctx.player.last_np is None or time.time() >= ctx.player.last_np["timeout"]:
@@ -680,6 +681,38 @@ async def _map(ctx: Context) -> str | None:
         # deactivate rank requests for all ids
         await map_requests_repo.mark_batch_as_inactive(map_ids=modified_beatmap_ids)
 
+    mapid = ctx.player.last_np["bid"]
+    x = apireq.get(f'https://catboy.best/api/v2/b/{mapid}').json()
+    flength = lambda s: f"{s//3600%24:02d}:{s//60%60:02d}:{s%60:02d}" if s >= 3600 else f"{s//60:02d}:{s%60:02d}"
+    def safe_get(d, keys, default=None):
+        for key in keys:
+            if isinstance(d, dict) and key in d:
+                d = d[key]
+            else:
+                return default
+        return d
+    color = {'rank': 'green', 'unrank': 'grey', 'love': 'pink'}.get(ctx.args[0], 'default_color')
+    payload = {
+        "embeds": [{
+            "title": f"{safe_get(x, ['set', 'artist'])} - {safe_get(x, ['set', 'title'])} [{safe_get(x, ['version'])}] {safe_get(x, ['difficulty_rating'])}★",
+            "description": f"cs: {safe_get(x, ['cs'])} od: {safe_get(x, ['accuracy'])} ar: {safe_get(x, ['ar'])} hp: {safe_get(x, ['drain'])} length: {flength(safe_get(x, ['total_length']))}",
+            "url": f"https://osu.direct/b/{mapid}",
+            "color": 34573,
+            "author": {
+                "name": f"{ctx.player.name} changed map status to {new_status}!",
+                "url": f"https://kawaii.pw/u/{ctx.player.id}",
+                "icon_url": f"https://a.kawaii.pw/{ctx.player.id}"
+            },
+            "footer": {
+                "text": f"mapped by {safe_get(x, ['set', 'creator'])}",
+                "icon_url": f"https://a.ppy.sh/{safe_get(x, ['user_id'])}"
+            },
+            "image": {
+                "url": f"{safe_get(x, ['set', 'covers', 'cover@2x'])}"
+            }
+        }],
+    }
+    r = apireq.post(f'{os.environ["DISCORD_RANK_WEBHOOK"]}', json=payload)
     return f"{bmap.embed} updated to {new_status!s}."
 
 
@@ -1235,7 +1268,7 @@ async def server(ctx: Context) -> str | None:
     # current state of settings
     mirror_search_url = urlparse(app.settings.MIRROR_SEARCH_ENDPOINT).netloc
     mirror_download_url = urlparse(app.settings.MIRROR_DOWNLOAD_ENDPOINT).netloc
-    using_osuapi = bool(app.settings.OSU_API_KEY)
+    using_osuapi = False
     advanced_mode = app.settings.DEVELOPER_MODE
     auto_logging = app.settings.AUTOMATICALLY_REPORT_PROBLEMS
 

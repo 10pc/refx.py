@@ -16,6 +16,7 @@ from functools import cache
 from pathlib import Path as SystemPath
 from typing import Any
 from typing import Literal
+from typing import Optional
 from urllib.parse import unquote
 from urllib.parse import unquote_plus
 
@@ -469,13 +470,13 @@ async def osuSubmitModular(
     pw_md5: str = Form(..., alias="pass"),
     osu_version: str = Form(..., alias="osuver"),
     client_hash_b64: bytes = Form(..., alias="s"),
-    fl_cheat_screenshot: bytes | None = File(None, alias="i"),
+    aim_value: str = Form(..., alias="acval"),
+    ar_value: str = Form(..., alias="arval"),
+    aim: bool = Form(..., alias="ac"),
+    arc: bool = Form(..., alias="ar"),
+    hdr: bool = Form(..., alias="hdrem"),
 ) -> Response:
     """Handle a score submission from an osu! client with an active session."""
-
-    if fl_cheat_screenshot:
-        stacktrace = app.utils.get_appropriate_stacktrace()
-        await app.state.services.log_strange_occurrence(stacktrace)
 
     # NOTE: the bancho protocol uses the "score" parameter name for both
     # the base64'ed score data, and the replay file in the multipart
@@ -724,7 +725,7 @@ async def osuSubmitModular(
         ":n50, :nmiss, :ngeki, :nkatu, "
         ":grade, :status, :mode, :play_time, "
         ":time_elapsed, :client_flags, :user_id, :perfect, "
-        ":checksum)",
+        ":checksum, :aim_value, :ar_value, :aim, :arc, :hdr)",
         {
             "map_md5": score.bmap.md5,
             "score": score.score,
@@ -747,6 +748,11 @@ async def osuSubmitModular(
             "user_id": score.player.id,
             "perfect": score.perfect,
             "checksum": score.client_checksum,
+            "aim_value": aim_value,
+            "ar_value": ar_value,
+            "aim": aim,
+            "arc": arc,
+            "hdr": hdr,
         },
     )
 
@@ -1452,7 +1458,7 @@ async def osuMarkAsRead(
     target_name = unquote(channel)  # TODO: unquote needed?
     if not target_name:
         log(
-            f"User {player} attempted to mark a channel as read without a target.",
+            f"{player} failed to mark as read",
             Ansi.LYELLOW,
         )
         return Response(b"")  # no channel specified

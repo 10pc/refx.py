@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 OSU_VERSION = re.compile(
-    r"^b(?P<date>\d{8})(?:\.(?P<revision>\d))?"
+    r"(?:b|Re\;fx b)(?P<date>\d{8})(?:\.(?P<revision>\d))?"
     r"(?P<stream>beta|cuttingedge|dev|tourney)?$",
 )
 

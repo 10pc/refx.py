@@ -52,15 +52,9 @@ async def api_get_beatmaps(**params: Any) -> BeatmapApiResponse:
     if app.settings.DEBUG:
         log(f"Doing api (getbeatmaps) request {params}", Ansi.LMAGENTA)
 
-    if app.settings.OSU_API_KEY:
-        # https://github.com/ppy/osu-api/wiki#apiget_beatmaps
-        url = "https://old.ppy.sh/api/get_beatmaps"
-        params["k"] = str(app.settings.OSU_API_KEY)
-    else:
-        # https://osu.direct/doc
-        url = "https://osu.direct/api/get_beatmaps"
+        # too lazy to get osu api key lol
 
-    response = await app.state.services.http_client.get(url, params=params)
+    response = await app.state.services.http_client.get("https://osu.direct/api/get_beatmaps", params=params)
     response_data = response.json()
     if response.status_code == 200 and response_data:  # (data may be [])
         return {"data": response_data, "status_code": response.status_code}
@@ -70,7 +64,7 @@ async def api_get_beatmaps(**params: Any) -> BeatmapApiResponse:
 
 @retry(reraise=True, stop=stop_after_attempt(3))
 async def api_get_osu_file(beatmap_id: int) -> bytes:
-    url = f"https://old.ppy.sh/osu/{beatmap_id}"
+    url = f"https://api.osu.direct/osu/{beatmap_id}"
     response = await app.state.services.http_client.get(url)
     response.raise_for_status()
     return response.read()

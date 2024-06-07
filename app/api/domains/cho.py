@@ -78,7 +78,19 @@ DISK_CHAT_LOG_FILE = ".data/logs/chat.log"
 BASE_DOMAIN = app.settings.DOMAIN
 
 # TODO: dear god
-NOW_PLAYING_RGX = re.compile(r'^ACTION is (?:playing|editing|watching|listening to) \[(?:.*?)(\d+)\s.*\]')
+NOW_PLAYING_RGX = re.compile(
+    r"^\x01ACTION is (?:playing|editing|watching|listening to) "
+    r"\[(?:http|https)://(?:osu\.direct|osu\.ppy\.sh)/b/(?P<bid>\d{1,10}) .+\]"
+    r"(?: <(?P<mode_vn>Taiko|CatchTheBeat|osu!mania)>)?"
+    r"(?P<mods>(?: (?:-|\+|~|\|)\w+(?:~|\|)?)+)?\x01$",
+)
+
+#NOW_PLAYING_RGX = re.compile(
+#    r"^\x01ACTION is (?:playing|editing|watching|listening to) "
+#    r"\[https://osu(?:\.[\w-]+)?\.kawaii\.pw/beatmapsets/(?P<sid>\d{1,10})#/(?P<bid>\d{1,10}) .+\]"
+#    r"(?: <(?P<mode_vn>Taiko|CatchTheBeat|osu!mania)>)?"
+#    r"(?P<mods>(?: (?:-|\+|~|\|)\w+(?:~|\|)?)+)?\x01$",
+#)
 
 FIRST_USER_ID = 3
 
@@ -389,39 +401,33 @@ class SendMessage(BasePacket):
             # check if the user is /np'ing a map.
             # even though this is a public channel,
             # we'll update the player's last np stored.
-            shebang = msg.find('#/')
-            bee = msg.find('b/')
-
-            if shebang != -1:
-                sub_string = msg[shebang + 2:]
-                next_space_index = sub_string.find(' ')
-                if next_space_index != -1:
-                    bid = sub_string[:next_space_index]
-                    log(f"bid: {bid}", Ansi.LCYAN)
-                else:
-                    log(f"space not found", Ansi.LCYAN)
-                    bid = '1000'
-            elif bee != -1:
-                sub_string = msg[bee + 2:]
-                next_space_index = sub_string.find(' ')
-                if next_space_index != -1:
-                    bid = sub_string[:next_space_index]
-                    log(f"bid: {bid}", Ansi.LCYAN)
-                else:
-                    log(f"space not found", Ansi.LCYAN)
-                    bid = '1000'
-
-            if bid:
+            r_match = NOW_PLAYING_RGX.match(msg)
+            if r_match:
                 # the player is /np'ing a map.
                 # save it to their player instance
                 # so we can use this elsewhere owo..
-                bmap = await Beatmap.from_bid(int(bid))
+                bmap = await Beatmap.from_bid(int(r_match["bid"]))
+                bid = int(r_match["bid"])
 
                 if bmap:
-                    mode_vn = player.status.mode.as_vanilla
+                    # parse mode_vn int from regex
+                    if r_match["mode_vn"] is not None:
+                        mode_vn = {"Taiko": 1, "CatchTheBeat": 2, "osu!mania": 3}[
+                            r_match["mode_vn"]
+                        ]
+                    else:
+                        # use player mode if not specified
+                        mode_vn = player.status.mode.as_vanilla
+
+                    # parse the mods from regex
+                    mods = None
+                    if r_match["mods"] is not None:
+                        mods = Mods.from_np(r_match["mods"][1:], mode_vn)
 
                     player.last_np = {
                         "bmap": bmap,
+                        "bid": bid,
+                        "mods": mods,
                         "mode_vn": mode_vn,
                         "timeout": time.time() + 300,  # /np's last 5mins
                     }
@@ -430,7 +436,6 @@ class SendMessage(BasePacket):
                     player.last_np = None
 
             t_chan.send(msg, sender=player)
-            log(f"{msg}", Ansi.LCYAN)
 
         player.update_latest_activity_soon()
 
@@ -676,7 +681,7 @@ async def handle_osu_login_request(
 
     # dev account
     if login_data["username"] != '10pc':
-        if login_data["osu_version"] != 'b19890415.2':
+        if login_data["osu_version"] != 'Re;fx b20240102.2':
             return {
                 "osu_token": "no",
                 "response_body": (app.packets.notification("Unknown client! please use the re;fx client.")),
@@ -1238,6 +1243,7 @@ class SendPrivateMessage(BasePacket):
                     # save it to their player instance
                     # so we can use this elsewhere owo..
                     bmap = await Beatmap.from_bid(int(r_match["bid"]))
+                    bid = int(r_match["bid"])
 
                     if bmap:
                         # parse mode_vn int from regex
@@ -1256,6 +1262,7 @@ class SendPrivateMessage(BasePacket):
 
                         player.last_np = {
                             "bmap": bmap,
+                            "bid": bid,
                             "mode_vn": mode_vn,
                             "mods": mods,
                             "timeout": time.time() + 300,  # /np's last 5mins
