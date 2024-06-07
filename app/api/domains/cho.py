@@ -8,6 +8,7 @@ import logging
 import re
 import struct
 import time
+import os
 from collections.abc import Callable
 from collections.abc import Mapping
 from datetime import date
@@ -561,6 +562,7 @@ def parse_osu_version_string(osu_version_string: str) -> OsuVersion | None:
         return None
 
     osu_version = OsuVersion(
+        refx=str(match["ver"]),
         date=date(
             year=int(match["date"][0:4]),
             month=int(match["date"][4:6]),
@@ -669,6 +671,8 @@ async def handle_osu_login_request(
 
     # perform some validation & further parsing on the data
 
+    #osu_version.refx
+
     osu_version = parse_osu_version_string(login_data["osu_version"])
     if osu_version is None:
         return {
@@ -681,10 +685,15 @@ async def handle_osu_login_request(
 
     # dev account
     if login_data["username"] != '10pc':
-        if login_data["osu_version"] != 'Re;fx b20240102.2':
+        if osu_version.refx == 'b':
             return {
                 "osu_token": "no",
-                "response_body": (app.packets.notification("Unknown client! please use the re;fx client.")),
+                "response_body": (app.packets.notification("Looks like you're on stable!\nPlease use the re;fx client.")),
+            }
+        elif str(osu_version.date) != app.settings.ALLOWED_CLIENT_VER:
+            return {
+                "osu_token": "no",
+                "response_body": (app.packets.notification(f'Please update your client!\nYour version: {osu_version.date}\nCurrent version: {os.environ["ALLOWED_CLIENT_VER"]}')),
             }
 
     adapters, running_under_wine = parse_adapters_string(login_data["adapters_str"])

@@ -131,10 +131,12 @@ class OsuVersion:
     # stream = cuttingedge
     def __init__(
         self,
+        refx: str,
         date: date,
         revision: int | None,  # TODO: should this be optional?
         stream: OsuStream,
     ) -> None:
+        self.refx = refx
         self.date = date
         self.revision = revision
         self.stream = stream

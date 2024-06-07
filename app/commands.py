@@ -691,7 +691,6 @@ async def _map(ctx: Context) -> str | None:
             else:
                 return default
         return d
-    color = {'rank': 'green', 'unrank': 'grey', 'love': 'pink'}.get(ctx.args[0], 'default_color')
     payload = {
         "embeds": [{
             "title": f"{safe_get(x, ['set', 'artist'])} - {safe_get(x, ['set', 'title'])} [{safe_get(x, ['version'])}] {safe_get(x, ['difficulty_rating'])}★",
@@ -700,8 +699,8 @@ async def _map(ctx: Context) -> str | None:
             "color": 34573,
             "author": {
                 "name": f"{ctx.player.name} changed map status to {new_status}!",
-                "url": f"https://kawaii.pw/u/{ctx.player.id}",
-                "icon_url": f"https://a.kawaii.pw/{ctx.player.id}"
+                "url": f"https://{app.settings.DOMAIN}/u/{ctx.player.id}",
+                "icon_url": f"https://a.{app.settings.DOMAIN}/{ctx.player.id}"
             },
             "footer": {
                 "text": f"mapped by {safe_get(x, ['set', 'creator'])}",
@@ -712,7 +711,7 @@ async def _map(ctx: Context) -> str | None:
             }
         }],
     }
-    r = apireq.post(f'{os.environ["DISCORD_RANK_WEBHOOK"]}', json=payload)
+    r = apireq.post(f'{app.settings.DISCORD_RANK_WEBHOOK}', json=payload)
     return f"{bmap.embed} updated to {new_status!s}."
 
 
