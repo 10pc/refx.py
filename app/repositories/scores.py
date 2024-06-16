@@ -47,6 +47,11 @@ class ScoresTable(Base):
     userid = Column("userid", Integer, nullable=False)
     perfect = Column("perfect", TINYINT(1), nullable=False)
     online_checksum = Column("online_checksum", String(32), nullable=False)
+    aim_value = Column("aim_value", Integer, nullable=False)
+    ar_value = Column("ar_value", FLOAT(precision=4, scale=2), nullable=False)
+    aim = Column("aim", TINYINT(1), nullable=False)
+    arc = Column("arc", TINYINT(1), nullable=False)
+    hdr = Column("hdr", TINYINT(1), nullable=False)
 
     __table_args__ = (
         Index("scores_map_md5_index", map_md5),
@@ -84,6 +89,11 @@ READ_PARAMS = (
     ScoresTable.userid,
     ScoresTable.perfect,
     ScoresTable.online_checksum,
+    ScoresTable.aim_value,
+    ScoresTable.ar_value,
+    ScoresTable.aim,
+    ScoresTable.arc,
+    ScoresTable.hdr
 )
 
 
@@ -110,6 +120,11 @@ class Score(TypedDict):
     userid: int
     perfect: int
     online_checksum: str
+    aim_value: int
+    ar_value: float
+    aim: int
+    arc: int
+    hdr: int
 
 
 async def create(
@@ -134,6 +149,11 @@ async def create(
     user_id: int,
     perfect: int,
     online_checksum: str,
+    aim_value: int,
+    ar_value: float,
+    aim: int,
+    arc: int,
+    hdr: int,
 ) -> Score:
     insert_stmt = insert(ScoresTable).values(
         map_md5=map_md5,
@@ -157,6 +177,11 @@ async def create(
         userid=user_id,
         perfect=perfect,
         online_checksum=online_checksum,
+        aim_value=aim_value,
+        ar_value=ar_value,
+        aim=aim,
+        arc=arc,
+        hdr=hdr,
     )
     rec_id = await app.state.services.database.execute(insert_stmt)
 

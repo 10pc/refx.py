@@ -26,12 +26,21 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         col = Ansi.LGREEN if response.status_code < 400 else Ansi.LRED
 
-        url = f"{request.headers['host']}{request['path']}"
+        try:
+            url = f"{request.headers['host']}{request['path']}"
 
-        log(
-            f"[{request.method}] {response.status_code} {url}{Ansi.RESET!r} | {Ansi.LBLUE!r}Request took: {magnitude_fmt_time(time_elapsed)}",
-            col,
-        )
+            log(
+                f"[{request.method}] {response.status_code} {url}{Ansi.RESET!r} | {Ansi.LBLUE!r}Request took: {magnitude_fmt_time(time_elapsed)}",
+                col,
+            )
+        except:
+            log(
+                f"[Some bot tried to scan vulnerabilities on {request['path']} | {Ansi.LBLUE!r}Request took: {magnitude_fmt_time(time_elapsed)}",
+                col,
+            )
+            log(
+                f"{request}"
+            )
 
         response.headers["process-time"] = str(round(time_elapsed) / 1e6)
         return response

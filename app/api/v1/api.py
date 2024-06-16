@@ -406,7 +406,8 @@ async def api_get_player_scores(
     query = [
         "SELECT t.id, t.map_md5, t.score, t.pp, t.acc, t.max_combo, "
         "t.mods, t.n300, t.n100, t.n50, t.nmiss, t.ngeki, t.nkatu, t.grade, "
-        "t.status, t.mode, t.play_time, t.time_elapsed, t.perfect "
+        "t.status, t.mode, t.play_time, t.time_elapsed, t.perfect, "
+        "t.aim_value, t.ar_value, t.aim, t.arc, t.hdr "
         "FROM scores t "
         "INNER JOIN maps b ON t.map_md5 = b.md5 "
         "WHERE t.userid = :user_id AND t.mode = :mode",
@@ -632,6 +633,7 @@ async def api_get_map_scores(
         "SELECT s.map_md5, s.score, s.pp, s.acc, s.max_combo, s.mods, "
         "s.n300, s.n100, s.n50, s.nmiss, s.ngeki, s.nkatu, s.grade, s.status, "
         "s.mode, s.play_time, s.time_elapsed, s.userid, s.perfect, "
+        "s.aim_value, s.ar_value, s.aim, s.arc, s.hdr, "
         "u.name player_name, u.country player_country, "
         "c.id clan_id, c.name clan_name, c.tag clan_tag "
         "FROM scores s "

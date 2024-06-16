@@ -6,6 +6,12 @@ import copy
 import hashlib
 import random
 import secrets
+import os
+import signal
+import json
+import time
+import requests as apireq
+from datetime import datetime
 from collections import defaultdict
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -44,6 +50,7 @@ import app.settings
 import app.state
 import app.utils
 from app import encryption
+from app import discord
 from app._typing import UNSET
 from app.constants import regexes
 from app.constants.gamemodes import GameMode
@@ -71,6 +78,7 @@ from app.repositories import users as users_repo
 from app.repositories.achievements import Achievement
 from app.usecases import achievements as achievements_usecases
 from app.usecases import user_achievements as user_achievements_usecases
+from app.usecases.performance import ScoreParams
 from app.utils import escape_enum
 from app.utils import pymysql_encode
 
@@ -78,6 +86,28 @@ BEATMAPS_PATH = SystemPath.cwd() / ".data/osu"
 REPLAYS_PATH = SystemPath.cwd() / ".data/osr"
 SCREENSHOTS_PATH = SystemPath.cwd() / ".data/ss"
 
+gamemode_int = {
+    0: 'vn!std',
+    1: 'vn!taiko',
+    2: 'vn!ctb',
+    3: 'vn!mania',
+    4: 'rx!std',
+    5: 'rx!taiko',
+    6: 'rx!ctb',
+    7: 'ap!std'
+}
+
+ranks = {
+    'A': '<:grade_a:1251961160731721830>',
+    'B': '<:grade_b:1251961158483705936>',
+    'C': '<:grade_c:1251961155857940571>',
+    'D': '<:grade_d:1251961153874296832>',
+    'F': '<:grade_f:1251961173482405936>',
+    'S': '<:grade_s:1251961171335188551>',
+    'SH': '<:grade_sh:1251961168763945102>',
+    'X': '<:grade_ss:1251961166700216450>',
+    'XH': '<:grade_ssh:1251961164225581207>'
+}
 
 router = APIRouter(
     tags=["osu! web API"],
@@ -111,26 +141,71 @@ def authenticate_player_session(
 
     return wrapper
 
-
 """ /web/ handlers """
 
 # Unhandled endpoints:
-# POST /web/osu-error.php
-# POST /web/osu-session.php
-# POST /web/osu-osz2-bmsubmit-post.php
-# POST /web/osu-osz2-bmsubmit-upload.php
-# GET /web/osu-osz2-bmsubmit-getid.php
-# GET /web/osu-get-beatmap-topic.php
+# POST /web/refx-session.php
+# POST /web/refx-osz2-bmsubmit-post.php
+# POST /web/refx-osz2-bmsubmit-upload.php
+# GET /web/refx-osz2-bmsubmit-getid.php
+# GET /web/refx-get-beatmap-topic.php
 
+@router.post("/web/refx-error.php")
+async def osuError(
+    username: str | None = Form(None, alias="u"),
+    pw_md5: str | None = Form(None, alias="h"),
+    user_id: int | None = Form(None, alias="i", ge=3, le=2_147_483_647),
+    osu_mode: int | None = Form(None, alias="osumode"),
+    game_mode: int | None = Form(None, alias="gamemode"),
+    game_time: int | None = Form(None, alias="gametime", ge=0),
+    audio_time: int | None = Form(None, alias="audiotime"),
+    culture: str | None = Form(None),
+    map_id: int | None = Form(None, alias="beatmap_id", ge=0, le=2_147_483_647),
+    map_md5: str | None = Form(None, alias="beatmap_checksum", min_length=32, max_length=32),
+    exception: str | None = Form(None),
+    feedback: str | None = Form(None),
+    stacktrace: str | None = Form(None),
+    soft: bool | None = Form(None),
+    map_count: int | None = Form(None, alias="beatmap_count", ge=0),
+    compatibility: bool | None = Form(None),
+    ram_used: int | None = Form(None, alias="ram", ge=0),
+    osu_version: str | None = Form(None, alias="version"),
+    exe_hash: str | None = Form(None, alias="exehash"),
+    config: str | None = Form(None),
+    screenshot_file: UploadFile | None = File(None, alias="ss"),
+) -> Response:
+    """Handle an error submitted from the osu! client."""
 
-@router.post("/web/osu-screenshot.php")
+    if username and pw_md5:
+        player = await app.state.sessions.players.from_login(
+            name=unquote(username),
+            pw_md5=pw_md5,
+        )
+        if not player:
+            # player login incorrect
+            await app.state.services.log_strange_occurrence("osu-error auth failed")
+            player = None
+    else:
+        player = None
+
+    err_desc = f"{feedback} ({exception})"
+    log(f'{player or "Offline user"} sent osu-error: {err_desc}', Ansi.LCYAN)
+
+    # NOTE: this stacktrace can be a LOT of data
+    if len(stacktrace) < 2000:
+        log(stacktrace[:-10], Ansi.LMAGENTA)
+
+    # TODO: save error in db?
+
+    return Response(b"")
+
+@router.post("/web/refx-screenshot.php")
 async def osuScreenshot(
     player: Player = Depends(authenticate_player_session(Form, "u", "p")),
     endpoint_version: int = Form(..., alias="v"),
     screenshot_file: UploadFile = File(..., alias="ss"),
 ) -> Response:
     with memoryview(await screenshot_file.read()) as screenshot_view:
-        # png sizes: 1080p: ~300-800kB | 4k: ~1-2mB
         if len(screenshot_view) > (4 * 1024 * 1024):
             return Response(
                 content=b"Screenshot file too large.",
@@ -165,7 +240,7 @@ async def osuScreenshot(
     return Response(filename.encode())
 
 
-@router.get("/web/osu-getfriends.php")
+@router.get("/web/refx-getfriends.php")
 async def osuGetFriends(
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
 ) -> Response:
@@ -182,7 +257,7 @@ def bancho_to_osuapi_status(bancho_status: int) -> int:
     }[bancho_status]
 
 
-@router.post("/web/osu-getbeatmapinfo.php")
+@router.post("/web/refx-getbeatmapinfo.php")
 async def osuGetBeatmapInfo(
     form_data: models.OsuBeatmapRequestForm,
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
@@ -233,7 +308,7 @@ async def osuGetBeatmapInfo(
     return Response("\n".join(ret).encode())
 
 
-@router.get("/web/osu-getfavourites.php")
+@router.get("/web/refx-getfavourites.php")
 async def osuGetFavourites(
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
 ) -> Response:
@@ -244,7 +319,7 @@ async def osuGetFavourites(
     )
 
 
-@router.get("/web/osu-addfavourite.php")
+@router.get("/web/refx-addfavourite.php")
 async def osuAddFavourite(
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
     map_set_id: int = Query(..., alias="a"),
@@ -262,7 +337,7 @@ async def osuAddFavourite(
     return Response(b"Added favourite!")
 
 
-@router.get("/web/lastfm.php")
+@router.get("/web/firstam.php")
 async def lastFM(
     action: Literal["scrobble", "np"],
     beatmap_id_or_hidden_flag: str = Query(
@@ -296,7 +371,7 @@ DIRECT_MAP_INFO_FMTSTR = (
 )
 
 
-@router.get("/web/osu-search.php")
+@router.get("/web/refx-search.php")
 async def osuSearchHandler(
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
     ranked_status: int = Query(..., alias="r", ge=0, le=8),
@@ -382,7 +457,7 @@ async def osuSearchHandler(
 
 
 # TODO: video support (needs db change)
-@router.get("/web/osu-search-set.php")
+@router.get("/web/refx-search-set.php")
 async def osuSearchSetHandler(
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
     map_set_id: int | None = Query(None, alias="s"),
@@ -458,10 +533,11 @@ def parse_form_data_score_params(
             replay_file,
         )
 
-@router.post("/web/osu-submit-modular.php")
-@router.post("/web/osu-submit-modular-selector.php")
+@router.post("/web/refx-submit-modular.php")
 async def osuSubmitModular(
     request: Request,
+    score_time: int | None = Form(None, alias="st"),
+    fail_time: int | None = Form(None, alias="ft"),
     exited_out: bool = Form(..., alias="x"),
     visual_settings_b64: bytes = Form(..., alias="fs"),
     storyboard_md5: str | None = Form(None, alias="sbk"),
@@ -470,8 +546,8 @@ async def osuSubmitModular(
     pw_md5: str = Form(..., alias="pass"),
     osu_version: str = Form(..., alias="osuver"),
     client_hash_b64: bytes = Form(..., alias="s"),
-    aim_value: str = Form(..., alias="acval"),
-    ar_value: str = Form(..., alias="arval"),
+    aim_value: int = Form(..., alias="acval"),
+    ar_value: float = Form(..., alias="arval"),
     aim: bool = Form(..., alias="ac"),
     arc: bool = Form(..., alias="ar"),
     hdr: bool = Form(..., alias="hdrem"),
@@ -482,6 +558,7 @@ async def osuSubmitModular(
     # the base64'ed score data, and the replay file in the multipart
     # starlette/fastapi do not support this, so we've moved it out
     score_parameters = parse_form_data_score_params(await request.form())
+    
     if score_parameters is None:
         return Response(b"")
 
@@ -622,7 +699,12 @@ async def osuSubmitModular(
         else:
             score.status = SubmissionStatus.FAILED
 
-    #score.time_elapsed = score_time if score.passed else fail_time
+    if score_time is not None:
+        if fail_time is not None:
+            score.time_elapsed = int(score_time) if score.passed else int(fail_time)
+    else:
+        score.time_elapsed = bmap.total_length
+
 
     if (  # check for pp caps on ranked & approved maps for appropriate players.
         score.bmap.awards_ranked_pp
@@ -690,6 +772,38 @@ async def osuSubmitModular(
                     {"map_md5": score.bmap.md5, "mode": score.mode},
                 )
 
+                modething = 0 if score.mode >= GameMode.RELAX_OSU else 1
+
+                score_args = ScoreParams(mode=modething)
+                score_args.mods = score.mods
+                score_args.nmiss = 0
+
+                result = app.usecases.performance.calculate_performances(
+                    osu_file_path=str(BEATMAPS_PATH / f"{score.bmap.id}.osu"),
+                    scores=[score_args],
+                )
+
+
+                payload = {
+                  "embeds": [
+                    {
+                      "title": f"{score.bmap.title} [{score.bmap.version}] - {score.bmap.diff:.2f}★",
+                      "description": f'{ranks.get(score.grade.name)} ▸ {score.pp:,.2f}pp ({result[0]["performance"]["pp"]}pp) ▸ {score.score:,}\n{score.acc:.2f}% ▸ {score.max_combo}/{score.bmap.max_combo}x ▸ {score.mods!r}',
+                      "author": {
+                        "name": f"[{gamemode_int.get(score.mode)}] New Best Score by {score.player.name}!",
+                        "url": f"https://kawaii.pw/u/{score.player.id}"
+                      },
+                      "thumbnail": {
+                        "url": f"https://a.kawaii.pw/{score.player.id}"
+                      },
+                      "image": {
+                        "url": f'https://assets.ppy.sh/beatmaps/{score.bmap.set_id}/covers/cover@2x.jpg'
+                      }
+                    }
+                  ],
+                  "username": "Score Watcher"
+                }
+
                 if prev_n1:
                     if score.player.id != prev_n1["id"]:
                         ann.append(
@@ -699,6 +813,8 @@ async def osuSubmitModular(
                                 name=prev_n1["name"],
                             ),
                         )
+
+                r = apireq.post(f'{app.settings.DISCORD_SCORE_WEBHOOK}', json=payload)
 
                 assert announce_chan is not None
                 announce_chan.send(" ".join(ann), sender=score.player, to_self=True)
@@ -725,7 +841,7 @@ async def osuSubmitModular(
         ":n50, :nmiss, :ngeki, :nkatu, "
         ":grade, :status, :mode, :play_time, "
         ":time_elapsed, :client_flags, :user_id, :perfect, "
-        ":checksum, :aim_value, :ar_value, :aim, :arc, :hdr)",
+        ":checksum, :aim_value, :ar_value, :aim, :arc, :hdr)",  
         {
             "map_md5": score.bmap.md5,
             "score": score.score,
@@ -916,6 +1032,7 @@ async def osuSubmitModular(
         GameMode.VANILLA_OSU,
         GameMode.VANILLA_TAIKO,
         GameMode.VANILLA_CATCH,
+        GameMode.VANILLA_MANIA,
     ):
         response = b"error: no"
     else:
@@ -1021,10 +1138,7 @@ async def osuSubmitModular(
 
     return Response(response)
 
-#
-
-
-@router.get("/web/osu-getreplay.php")
+@router.get("/web/refx-getreplay.php")
 async def getReplay(
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
     mode: int = Query(..., alias="m", ge=0, le=3),
@@ -1045,7 +1159,7 @@ async def getReplay(
     return FileResponse(file)
 
 
-@router.get("/web/osu-rate.php")
+@router.get("/web/refx-rate.php")
 async def osuRate(
     player: Player = Depends(
         authenticate_player_session(Query, "u", "p", err=b"auth fail"),
@@ -1183,7 +1297,7 @@ SCORE_LISTING_FMTSTR = (
 )
 
 
-@router.get("/web/osu-osz2-getscores.php")
+@router.get("/web/refx-osz2-getscores.php")
 async def getScores(
     player: Player = Depends(authenticate_player_session(Query, "us", "ha")),
     requesting_from_editor_song_select: bool = Query(..., alias="s"),
@@ -1366,7 +1480,7 @@ async def getScores(
     return Response("\n".join(response_lines).encode())
 
 
-@router.post("/web/osu-comment.php")
+@router.post("/web/refx-comment.php")
 async def osuComment(
     player: Player = Depends(authenticate_player_session(Form, "u", "p")),
     map_id: int = Form(..., alias="b"),
@@ -1450,7 +1564,7 @@ async def osuComment(
     return Response(b"")  # empty resp is fine
 
 
-@router.get("/web/osu-markasread.php")
+@router.get("/web/refx-markasread.php")
 async def osuMarkAsRead(
     player: Player = Depends(authenticate_player_session(Query, "u", "h")),
     channel: str = Query(..., min_length=0, max_length=32),
@@ -1474,12 +1588,12 @@ async def osuMarkAsRead(
     return Response(b"")
 
 
-@router.get("/web/osu-getseasonal.php")
+@router.get("/web/refx-getseasonal.php")
 async def osuSeasonal() -> Response:
     return ORJSONResponse(app.settings.SEASONAL_BGS)
 
 
-@router.get("/web/bancho_connect.php")
+@router.get("/web/bancho_refx_connect.php")
 async def banchoConnect(
     # NOTE: this is disabled as this endpoint can be called
     #       before a player has been granted a session
@@ -1589,14 +1703,26 @@ async def get_updated_beatmap(
         status_code=status.HTTP_301_MOVED_PERMANENTLY,
     )
 
-
-@router.get("/p/doyoureallywanttoaskpeppy")
+@router.get("/p/doyoureallywanttoaskkaupec")
 async def peppyDMHandler() -> Response:
     return Response(
         content=(
             b"This user's ID is usually peppy's (when on bancho), "
             b"and is blocked from being messaged by the osu! client."
         ),
+    )
+
+@router.get("/p/chart/{map_filename}")
+async def chart(
+    map_filename: str,
+) -> Response:
+    """Send the latest .osu file the server has for a given map."""
+    if host == "osu.ppy.sh":
+        return Response("bancho.py only supports the -devserver connection method")
+
+    return RedirectResponse(
+        url=f"https://osu.ppy.sh{request['raw_path'].decode()}",
+        status_code=status.HTTP_301_MOVED_PERMANENTLY,
     )
 
 
