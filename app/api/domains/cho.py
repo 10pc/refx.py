@@ -110,7 +110,7 @@ async def bancho_http_handler() -> Response:
     return HTMLResponse(
         f"""
 <!DOCTYPE html>
-<body style="font-family: monospace; white-space: pre-wrap;">Running bancho.py v{app.settings.VERSION}
+<body style="font-family: monospace; white-space: pre-wrap;">Running refx.py v{app.settings.VERSION}
 
 <a href="online">{len(players)} online players</a>
 <a href="matches">{len(matches)} matches</a>
@@ -118,7 +118,6 @@ async def bancho_http_handler() -> Response:
 <b>packets handled ({len(packets)})</b>
 {new_line.join([f"{packet.name} ({packet.value})" for packet in packets])}
 
-<a href="https://github.com/osuAkatsuki/bancho.py">Source code</a>
 </body>
 </html>""",
     )
@@ -892,7 +891,11 @@ async def handle_osu_login_request(
         player.bancho_priv | ClientPrivileges.SUPPORTER,
     )
 
-    data += WELCOME_NOTIFICATION
+    if not player.priv & Privileges.VERIFIED:
+        return {
+            "osu_token": "no",
+            "response_body": (app.packets.notification("You are not verified yet!\nPlease join our discord to verify and continue playing.")),
+        }
 
     # send all appropriate channel info to our player.
     # the osu! client will attempt to join the channels.
@@ -987,30 +990,6 @@ async def handle_osu_login_request(
                     recipient=msg["to_name"],
                     sender_id=msg["from_id"],
                 )
-
-        if not player.priv & Privileges.VERIFIED:
-            # this is the player's first login, verify their
-            # account & send info about the server/its usage.
-            await player.add_privs(Privileges.VERIFIED)
-
-            if player.id == FIRST_USER_ID:
-                # this is the first player registering on
-                # the server, grant them full privileges.
-                await player.add_privs(
-                    Privileges.STAFF
-                    | Privileges.NOMINATOR
-                    | Privileges.WHITELISTED
-                    | Privileges.TOURNEY_MANAGER
-                    | Privileges.DONATOR
-                    | Privileges.ALUMNI,
-                )
-
-            data += app.packets.send_message(
-                sender=app.state.sessions.bot.name,
-                msg=WELCOME_MSG,
-                recipient=player.name,
-                sender_id=app.state.sessions.bot.id,
-            )
 
     else:
         # player is restricted, one way data

@@ -94,7 +94,7 @@ gamemode_int = {
     4: 'rx!std',
     5: 'rx!taiko',
     6: 'rx!ctb',
-    7: 'ap!std'
+    8: 'ap!std'
 }
 
 ranks = {
@@ -683,7 +683,7 @@ async def osuSubmitModular(
     if score.bmap:
         osu_file_path = BEATMAPS_PATH / f"{score.bmap.id}.osu"
         if await ensure_osu_file_is_available(score.bmap.id, score.bmap.md5):
-            score.pp, score.sr = score.calculate_performance(bmap.id)
+            score.pp, score.sr = await score.calculate_performance(bmap.id)
 
             if score.passed:
                 await score.calculate_status()
@@ -772,9 +772,7 @@ async def osuSubmitModular(
                     {"map_md5": score.bmap.md5, "mode": score.mode},
                 )
 
-                modething = 0 if score.mode >= GameMode.RELAX_OSU else 1
-
-                score_args = ScoreParams(mode=modething)
+                score_args = ScoreParams(mode=score.mode.as_vanilla)
                 score_args.mods = score.mods
                 score_args.nmiss = 0
 
@@ -783,14 +781,14 @@ async def osuSubmitModular(
                     scores=[score_args],
                 )
 
-
                 payload = {
                   "embeds": [
                     {
-                      "title": f"{score.bmap.title} [{score.bmap.version}] - {score.bmap.diff:.2f}★",
-                      "description": f'{ranks.get(score.grade.name)} ▸ {score.pp:,.2f}pp ({result[0]["performance"]["pp"]}pp) ▸ {score.score:,}\n{score.acc:.2f}% ▸ {score.max_combo}/{score.bmap.max_combo}x ▸ {score.mods!r}',
+                      "title": f'{score.bmap.title} [{score.bmap.version}] - {result[0]["difficulty"]["stars"]:.2f}★',
+                      "url": f'https://osu.direct/b/{score.bmap.id}',
+                      "description": f'{ranks.get(score.grade.name)} ▸ {score.pp:,.2f}pp ({result[0]["performance"]["pp"]:.2f}pp) ▸ {score.score:,}\n{score.acc:.2f}% ▸ [{score.n300}/{score.n100}/{score.n50}/{score.nmiss}x] ▸ {score.max_combo}/{score.bmap.max_combo}x ▸ {score.mods!r}',
                       "author": {
-                        "name": f"[{gamemode_int.get(score.mode)}] New Best Score by {score.player.name}!",
+                        "name": "",
                         "url": f"https://kawaii.pw/u/{score.player.id}"
                       },
                       "thumbnail": {
@@ -806,6 +804,7 @@ async def osuSubmitModular(
 
                 if prev_n1:
                     if score.player.id != prev_n1["id"]:
+                        payload["embeds"][0]["author"]["name"] = f'[{gamemode_int.get(score.mode)}] {score.player.name} just sniped {prev_n1["name"]}!'
                         ann.append(
                             f"(Previous #1: [https://{app.settings.DOMAIN}/u/"
                             "{id} {name}])".format(
@@ -813,6 +812,10 @@ async def osuSubmitModular(
                                 name=prev_n1["name"],
                             ),
                         )
+                    else:
+                        payload["embeds"][0]["author"]["name"] = f'[{gamemode_int.get(score.mode)}] {score.player.name} just sniped themselves!'
+                else:
+                    payload["embeds"][0]["author"]["name"] = f'[{gamemode_int.get(score.mode)}] {score.player.name} set a new #1!'
 
                 r = apireq.post(f'{app.settings.DISCORD_SCORE_WEBHOOK}', json=payload)
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import app.repositories.maps as maps
+
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TypedDict
@@ -9,6 +11,7 @@ from akatsuki_pp_py import Beatmap
 from akatsuki_pp_py import Calculator
 
 from app.constants.mods import Mods
+
 
 
 @dataclass
@@ -55,7 +58,6 @@ class DifficultyRating(TypedDict):
 class PerformanceResult(TypedDict):
     performance: PerformanceRating
     difficulty: DifficultyRating
-
 
 def calculate_performances(
     osu_file_path: str,

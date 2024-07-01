@@ -252,6 +252,8 @@ class Score:
         s.client_time = datetime.strptime(data[14], "%y%m%d%H%M%S")
         s.client_flags = ClientFlags(data[15].count(" ") & ~4)
 
+        s.status = ""
+
         s.server_time = datetime.now()
 
         return s
@@ -318,9 +320,11 @@ class Score:
         assert num_better_scores is not None
         return num_better_scores + 1
 
-    def calculate_performance(self, beatmap_id: int) -> tuple[float, float]:
+    async def calculate_performance(self, beatmap_id: int) -> tuple[float, float]:
         """Calculate PP and star rating for our score."""
         mode_vn = self.mode.as_vanilla
+
+          # Add RELAX to mods
 
         score_args = ScoreParams(
             mode=mode_vn,

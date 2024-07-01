@@ -10,6 +10,7 @@ import time
 import traceback
 import uuid
 import requests as apireq
+import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Mapping
@@ -45,6 +46,8 @@ from app.constants.mods import SPEED_CHANGING_MODS
 from app.constants.mods import Mods
 from app.constants.privileges import ClanPrivileges
 from app.constants.privileges import Privileges
+from app.discord import Webhook
+from app.discord import Embed
 from app.logging import Ansi
 from app.logging import log
 from app.objects.beatmap import Beatmap
@@ -259,35 +262,6 @@ async def reconnect(ctx: Context) -> str | None:
     target.logout()
 
     return None
-
-
-@command(Privileges.SUPPORTER)
-async def changename(ctx: Context) -> str | None:
-    """Change your username."""
-    name = " ".join(ctx.args).strip()
-
-    if not regexes.USERNAME.match(name):
-        return "Must be 2-15 characters in length."
-
-    if "_" in name and " " in name:
-        return 'May contain "_" and " ", but not both.'
-
-    if name in app.settings.DISALLOWED_NAMES:
-        return "Disallowed username; pick another."
-
-    if await users_repo.fetch_one(name=name):
-        return "Username already taken by another player."
-
-    # all checks passed, update their name
-    await users_repo.partial_update(ctx.player.id, name=name)
-
-    ctx.player.enqueue(
-        app.packets.notification(f"Your username has been changed to {name}!"),
-    )
-    ctx.player.logout()
-
-    return None
-
 
 @command(Privileges.UNRESTRICTED, aliases=["bloodcat", "beatconnect", "chimu", "q"])
 async def maplink(ctx: Context) -> str | None:
@@ -612,7 +586,7 @@ async def requests(ctx: Context) -> str | None:
     return "\n".join(l)
 
 
-_status_str_to_int_map = {"unrank": 0, "rank": 2, "love": 5}
+_status_str_to_int_map = {"unrank": 0, "rank": 2, "qual": 4, "love": 5}
 
 
 def status_to_id(s: str) -> int:
@@ -624,7 +598,7 @@ async def _map(ctx: Context) -> str | None:
     """Changes the ranked status of the most recently /np'ed map."""
     if (
         len(ctx.args) != 2
-        or ctx.args[0] not in ("rank", "unrank", "love")
+        or ctx.args[0] not in ("rank", "unrank", "love", "qual")
         or ctx.args[1] not in ("set", "map")
     ):
         return "Invalid syntax: !map <rank/unrank/love> <map/set>"
@@ -691,6 +665,18 @@ async def _map(ctx: Context) -> str | None:
             else:
                 return default
         return d
+
+    title = f"{safe_get(x, ['set', 'artist'])} - {safe_get(x, ['set', 'title'])} [{safe_get(x, ['version'])}] {safe_get(x, ['difficulty_rating'])}★"
+    description = f"cs: {safe_get(x, ['cs'])} od: {safe_get(x, ['accuracy'])} ar: {safe_get(x, ['ar'])} hp: {safe_get(x, ['drain'])} length: {flength(safe_get(x, ['total_length']))}"
+    url = f"https://osu.direct/b/{mapid}"
+    color = 34573
+
+    rankEmbed = Embed(title=title, description=description, url=url, color=color)
+
+    rankEmbed.set_author(name=f"{ctx.player.name} changed map status to {new_status}!", url=f"https://{app.settings.DOMAIN}/u/{ctx.player.id}", icon_url=f"https://a.{app.settings.DOMAIN}/{ctx.player.id}")
+    rankEmbed.set_footer(text=f"mapped by {safe_get(x, ['set', 'creator'])}", icon_url=f"https://a.ppy.sh/{safe_get(x, ['user_id'])}")
+    rankEmbed.set_image(url=f"{safe_get(x, ['set', 'covers', 'cover@2x'])}")
+
     payload = {
         "embeds": [{
             "title": f"{safe_get(x, ['set', 'artist'])} - {safe_get(x, ['set', 'title'])} [{safe_get(x, ['version'])}] {safe_get(x, ['difficulty_rating'])}★",
@@ -711,7 +697,12 @@ async def _map(ctx: Context) -> str | None:
             }
         }],
     }
-    r = apireq.post(f'{app.settings.DISCORD_RANK_WEBHOOK}', json=payload)
+
+    webhook_url = app.settings.DISCORD_RANK_WEBHOOK
+    if webhook_url:
+        webhook = Webhook(webhook_url, embeds=[rankEmbed])
+        asyncio.create_task(webhook.post())
+
     return f"{bmap.embed} updated to {new_status!s}."
 
 
@@ -929,13 +920,17 @@ async def restrict(ctx: Context) -> str | None:
     if len(ctx.args) < 2:
         return "Invalid syntax: !restrict <name> <reason>"
 
+    if ctx.args[0].lower() == "banchobot":
+        ctx.player.logout()
+        return f"no"
+
     # find any user matching (including offline).
     target = await app.state.sessions.players.from_cache_or_sql(name=ctx.args[0])
     if not target:
         return f'"{ctx.args[0]}" not found.'
 
-    if target.priv & Privileges.STAFF and not ctx.player.priv & Privileges.DEVELOPER:
-        return "Only developers can manage staff members."
+    #if target.priv & Privileges.STAFF and not ctx.player.priv & Privileges.DEVELOPER:
+    #    return "Only developers can manage staff members."
 
     if target.restricted:
         return f"{target} is already restricted!"
@@ -965,8 +960,8 @@ async def unrestrict(ctx: Context) -> str | None:
     if not target:
         return f'"{ctx.args[0]}" not found.'
 
-    if target.priv & Privileges.STAFF and not ctx.player.priv & Privileges.DEVELOPER:
-        return "Only developers can manage staff members."
+    #if target.priv & Privileges.STAFF and not ctx.player.priv & Privileges.DEVELOPER:
+    #    return "Only developers can manage staff members."
 
     if not target.restricted:
         return f"{target} is not restricted!"
@@ -2317,6 +2312,36 @@ async def clan_help(ctx: Context) -> str | None:
 
     return "\n".join(cmds)
 
+@clan_commands.add(Privileges.UNRESTRICTED, aliases=["j"])
+async def clan_join(ctx: Context) -> str | None:
+    """Joins a clan based on ID"""
+    prefix = app.settings.COMMAND_PREFIX
+
+    if len(ctx.args) < 1:
+        return f"Invalid syntax: {prefix}clan join <id> ({prefix}clan list to view IDs)"
+
+    if ctx.player.clan_id:
+        clan = await clans_repo.fetch_one(id=ctx.player.clan_id)
+        if clan:
+            clan_display_name = f"[{clan['tag']}] {clan['name']}"
+            return f"You're already a member of {clan_display_name}!"
+
+    try:
+        clan_id_new = int(ctx.args[0])
+    except ValueError:
+        return "Argument must be a valid integer ID!"
+
+    clan = await clans_repo.fetch_one(id=clan_id_new)
+    if not clan:
+        return "The specified clan ID does not exist."
+
+    await users_repo.partial_update(
+        ctx.player.id,
+        clan_id=clan_id_new,
+        clan_priv=ClanPrivileges.Member,
+    )
+
+    return f"Joined [{clan['tag']}] {clan['name']}"
 
 @clan_commands.add(Privileges.UNRESTRICTED, aliases=["c"])
 async def clan_create(ctx: Context) -> str | None:

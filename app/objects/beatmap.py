@@ -49,8 +49,7 @@ async def api_get_beatmaps(**params: Any) -> BeatmapApiResponse:
 
     Optionally use osu.direct's API if the user has not provided an osu! api key.
     """
-    if app.settings.DEBUG:
-        log(f"Doing api (getbeatmaps) request {params}", Ansi.LMAGENTA)
+    log(f"Doing api (getbeatmaps) request {params}", Ansi.LMAGENTA)
 
         # too lazy to get osu api key lol
 
@@ -64,7 +63,7 @@ async def api_get_beatmaps(**params: Any) -> BeatmapApiResponse:
 
 @retry(reraise=True, stop=stop_after_attempt(3))
 async def api_get_osu_file(beatmap_id: int) -> bytes:
-    url = f"https://api.osu.direct/osu/{beatmap_id}"
+    url = f"https://old.ppy.sh/osu/{beatmap_id}"
     response = await app.state.services.http_client.get(url)
     response.raise_for_status()
     return response.read()
@@ -101,7 +100,7 @@ async def ensure_local_osu_file(
         if app.settings.DEBUG:
             log(f"Doing osu!api (.osu file) request {bmap_id}", Ansi.LMAGENTA)
 
-        url = f"https://old.ppy.sh/osu/{bmap_id}"
+        url = f"https://osu.direct/api/osu/{bmap_id}"
         response = await app.state.services.http_client.get(url)
         if response.status_code != 200:
             if 400 <= response.status_code < 500:
@@ -132,14 +131,15 @@ async def ensure_osu_file_is_available(
         return True
 
     try:
+        log(f"Attempting to fetch osu file for {beatmap_id}", Ansi.LMAGENTA)
         latest_osu_file = await api_get_osu_file(beatmap_id)
-    except httpx.HTTPStatusError:
-        return False
-    except Exception:
+    except Exception as e:
         log(f"Failed to fetch osu file for {beatmap_id}", Ansi.LRED)
+        log(f"{e}", Ansi.LRED)
         return False
 
     write_osu_file_to_disk(beatmap_id, latest_osu_file)
+    log(f"Successfully fetched osu file for {beatmap_id}", Ansi.LMAGENTA)
     return True
 
 

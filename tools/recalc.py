@@ -52,7 +52,6 @@ def divide_chunks(values: list[T], n: int) -> Iterator[list[T]]:
     for i in range(0, len(values), n):
         yield values[i : i + n]
 
-
 async def recalculate_score(
     score: dict[str, Any],
     beatmap_path: Path,
@@ -63,9 +62,11 @@ async def recalculate_score(
         beatmap = Beatmap(path=str(beatmap_path))
         ctx.beatmaps[score["map_id"]] = beatmap
 
+    noRX = score["mods"] & ~Mods.RELAX
+
     calculator = Calculator(
         mode=GameMode(score["mode"]).as_vanilla,
-        mods=score["mods"],
+        mods=noRX,
         combo=score["max_combo"],
         n_geki=score["ngeki"],  # Mania 320s
         n300=score["n300"],
@@ -80,15 +81,12 @@ async def recalculate_score(
     if math.isnan(new_pp) or math.isinf(new_pp):
         new_pp = 0.0
 
-    new_pp = min(new_pp, 9999.999)
-
     await ctx.database.execute(
         "UPDATE scores SET pp = :new_pp WHERE id = :id",
         {"new_pp": new_pp, "id": score["id"]},
     )
 
-    if DEBUG:
-        print(
+    print(
             f"Recalculated score ID {score['id']} ({score['pp']:.3f}pp -> {new_pp:.3f}pp)",
         )
 

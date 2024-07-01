@@ -339,7 +339,7 @@ async def api_get_player_status(
 
 @router.get("/get_player_scores")
 async def api_get_player_scores(
-    scope: Literal["recent", "best"],
+    scope: Literal["recent", "best", "first"],
     user_id: int | None = Query(None, alias="id", ge=3, le=2_147_483_647),
     username: str | None = Query(None, alias="name", pattern=regexes.USERNAME.pattern),
     mods_arg: str | None = Query(None, alias="mods"),
@@ -348,7 +348,7 @@ async def api_get_player_scores(
     include_loved: bool = False,
     include_failed: bool = True,
 ) -> Response:
-    """Return a list of a given user's recent/best scores."""
+    """Return a list of a given user's recent/best/first scores."""
     if mode_arg in (
         GameMode.RELAX_MANIA,
         GameMode.AUTOPILOT_CATCH,
@@ -435,10 +435,22 @@ async def api_get_player_scores(
         query.append("AND t.status = 2 AND b.status IN :statuses")
         params["statuses"] = allowed_statuses
         sort = "t.pp"
+    elif scope == "recent":
+        query.append("AND t.status != 0")
+        sort = "t.play_time"
     else:
-        if not include_failed:
-            query.append("AND t.status != 0")
-
+        lb_sort = "pp"
+        query = [
+            "SELECT t.id, t.map_md5, t.score, t.pp, t.acc, t.max_combo, "
+            "t.mods, t.n300, t.n100, t.n50, t.nmiss, t.ngeki, t.nkatu, t.grade, "
+            "t.status, t.mode, t.time_elapsed, t.play_time, t.perfect, "
+            "t.aim_value, t.ar_value, t.aim, t.arc, t.hdr "
+            "FROM scores t "
+           f"JOIN (SELECT map_md5, MAX({lb_sort}) AS points FROM scores WHERE status = 2 GROUP BY map_md5) max_scores "
+           f"ON t.map_md5 = max_scores.map_md5 AND t.{lb_sort} = max_scores.points "
+            "INNER JOIN maps b ON max_scores.map_md5 = b.md5 "
+            "WHERE t.userid = :user_id AND t.mode = :mode AND t.status = 2 AND b.status IN (2, 3, 5)"
+        ]
         sort = "t.play_time"
 
     query.append(f"ORDER BY {sort} DESC LIMIT :limit")
@@ -453,6 +465,7 @@ async def api_get_player_scores(
     for row in rows:
         bmap = await Beatmap.from_md5(row.pop("map_md5"))
         row["beatmap"] = bmap.as_dict if bmap else None
+        row["mods_readable"] = mods.__repr__()
 
     clan: clans_repo.Clan | None = None
     if player.clan_id:

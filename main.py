@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 
 import uvicorn
 
 import app.logging
 import app.settings
 import app.utils
+
 
 app.logging.configure_logging()
 
@@ -25,7 +27,6 @@ def main() -> int:
         port=app.settings.APP_PORT,
     )
     return 0
-
 
 if __name__ == "__main__":
     exit(main())
