@@ -350,7 +350,6 @@ async def api_get_player_scores(
 ) -> Response:
     """Return a list of a given user's recent/best/first scores."""
     if mode_arg in (
-        GameMode.RELAX_MANIA,
         GameMode.AUTOPILOT_CATCH,
         GameMode.AUTOPILOT_TAIKO,
         GameMode.AUTOPILOT_MANIA,
@@ -407,7 +406,7 @@ async def api_get_player_scores(
         "SELECT t.id, t.map_md5, t.score, t.pp, t.acc, t.max_combo, "
         "t.mods, t.n300, t.n100, t.n50, t.nmiss, t.ngeki, t.nkatu, t.grade, "
         "t.status, t.mode, t.play_time, t.time_elapsed, t.perfect, "
-        "t.aim_value, t.ar_value, t.aim, t.arc, t.hdr "
+        "t.aim_value, t.ar_value, t.aim, t.arc, t.cs, t.tw, t.twval, t.hdr "
         "FROM scores t "
         "INNER JOIN maps b ON t.map_md5 = b.md5 "
         "WHERE t.userid = :user_id AND t.mode = :mode",
@@ -444,7 +443,7 @@ async def api_get_player_scores(
             "SELECT t.id, t.map_md5, t.score, t.pp, t.acc, t.max_combo, "
             "t.mods, t.n300, t.n100, t.n50, t.nmiss, t.ngeki, t.nkatu, t.grade, "
             "t.status, t.mode, t.time_elapsed, t.play_time, t.perfect, "
-            "t.aim_value, t.ar_value, t.aim, t.arc, t.hdr "
+            "t.aim_value, t.ar_value, t.aim, t.arc, t.cs, t.tw, t.twval, t.hdr "
             "FROM scores t "
            f"JOIN (SELECT map_md5, MAX({lb_sort}) AS points FROM scores WHERE status = 2 GROUP BY map_md5) max_scores "
            f"ON t.map_md5 = max_scores.map_md5 AND t.{lb_sort} = max_scores.points "
@@ -463,6 +462,7 @@ async def api_get_player_scores(
 
     # fetch & return info from sql
     for row in rows:
+        mods = Mods(row["mods"])
         bmap = await Beatmap.from_md5(row.pop("map_md5"))
         row["beatmap"] = bmap.as_dict if bmap else None
         row["mods_readable"] = mods.__repr__()
@@ -504,7 +504,6 @@ async def api_get_player_most_played(
     """Return the most played beatmaps of a given player."""
     # NOTE: this will almost certainly not scale well, lol.
     if mode_arg in (
-        GameMode.RELAX_MANIA,
         GameMode.AUTOPILOT_CATCH,
         GameMode.AUTOPILOT_TAIKO,
         GameMode.AUTOPILOT_MANIA,
@@ -597,7 +596,6 @@ async def api_get_map_scores(
 ) -> Response:
     """Return the top n scores on a given beatmap."""
     if mode_arg in (
-        GameMode.RELAX_MANIA,
         GameMode.AUTOPILOT_CATCH,
         GameMode.AUTOPILOT_TAIKO,
         GameMode.AUTOPILOT_MANIA,
@@ -646,7 +644,7 @@ async def api_get_map_scores(
         "SELECT s.map_md5, s.score, s.pp, s.acc, s.max_combo, s.mods, "
         "s.n300, s.n100, s.n50, s.nmiss, s.ngeki, s.nkatu, s.grade, s.status, "
         "s.mode, s.play_time, s.time_elapsed, s.userid, s.perfect, "
-        "s.aim_value, s.ar_value, s.aim, s.arc, s.hdr, "
+        "s.aim_value, s.ar_value, s.aim, s.arc, s.cs, s.tw, s.twval, s.hdr, "
         "u.name player_name, u.country player_country, "
         "c.id clan_id, c.name clan_name, c.tag clan_tag "
         "FROM scores s "
@@ -879,7 +877,6 @@ async def api_get_global_leaderboard(
     country: str | None = Query(None, min_length=2, max_length=2),
 ) -> Response:
     if mode_arg in (
-        GameMode.RELAX_MANIA,
         GameMode.AUTOPILOT_CATCH,
         GameMode.AUTOPILOT_TAIKO,
         GameMode.AUTOPILOT_MANIA,

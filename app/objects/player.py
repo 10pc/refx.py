@@ -105,7 +105,7 @@ class Status:
     info_text: str = ""
     map_md5: str = ""
     mods: Mods = Mods.NOMOD
-    mode: GameMode = GameMode.VANILLA_OSU
+    mode: GameMode = GameMode.REFX_OSU
     map_id: int = 0
 
 
@@ -914,7 +914,7 @@ class Player:
             return 0
 
         rank = await app.state.services.redis.zrevrank(
-            f"bancho:leaderboard:{mode.value}",
+            f"bancho:leaderboard:{mode}",
             str(self.id),
         )
         return cast(int, rank) + 1 if rank is not None else 0
@@ -925,7 +925,7 @@ class Player:
 
         country = self.geoloc["country"]["acronym"]
         rank = await app.state.services.redis.zrevrank(
-            f"bancho:leaderboard:{mode.value}:{country}",
+            f"bancho:leaderboard:{mode}:{country}",
             str(self.id),
         )
 
@@ -938,13 +938,13 @@ class Player:
         if not self.restricted:
             # global rank
             await app.state.services.redis.zadd(
-                f"bancho:leaderboard:{mode.value}",
+                f"bancho:leaderboard:{mode}",
                 {str(self.id): stats.pp},
             )
 
             # country rank
             await app.state.services.redis.zadd(
-                f"bancho:leaderboard:{mode.value}:{country}",
+                f"bancho:leaderboard:{mode}:{country}",
                 {str(self.id): stats.pp},
             )
 

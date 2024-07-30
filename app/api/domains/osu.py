@@ -87,14 +87,14 @@ REPLAYS_PATH = SystemPath.cwd() / ".data/osr"
 SCREENSHOTS_PATH = SystemPath.cwd() / ".data/ss"
 
 gamemode_int = {
-    0: 'vn!std',
-    1: 'vn!taiko',
-    2: 'vn!ctb',
-    3: 'vn!mania',
-    4: 'rx!std',
-    5: 'rx!taiko',
-    6: 'rx!ctb',
-    8: 'ap!std'
+    0: 're;fx!std',
+    1: 're;fx!taiko',
+    2: 're;fx!ctb',
+    3: 're;fx!mania',
+    4: 'shaymi!std',
+    5: 'shaymi!taiko',
+    6: 'shaymi!ctb',
+    7: 'shaymi!mania'
 }
 
 ranks = {
@@ -551,6 +551,9 @@ async def osuSubmitModular(
     aim: bool = Form(..., alias="ac"),
     arc: bool = Form(..., alias="ar"),
     hdr: bool = Form(..., alias="hdrem"),
+    cs: bool = Form(..., alias="cs"),
+    tw: bool = Form(..., alias="tw"),
+    twval: float = Form(..., alias="twval"),
 ) -> Response:
     """Handle a score submission from an osu! client with an active session."""
 
@@ -705,24 +708,6 @@ async def osuSubmitModular(
     else:
         score.time_elapsed = bmap.total_length
 
-
-    if (  # check for pp caps on ranked & approved maps for appropriate players.
-        score.bmap.awards_ranked_pp
-        and not (score.player.priv & Privileges.WHITELISTED or score.player.restricted)
-    ):
-        # Get the PP cap for the current context.
-        """# TODO: find where to put autoban pp
-        pp_cap = app.settings.AUTOBAN_PP[score.mode][score.mods & Mods.FLASHLIGHT != 0]
-        if score.pp > pp_cap:
-            await score.player.restrict(
-                admin=app.state.sessions.bot,
-                reason=f"[{score.mode!r} {score.mods!r}] autoban @ {score.pp:.2f}pp",
-            )
-            # refresh their client state
-            if score.player.online:
-                score.player.logout()
-        """
-
     """ Score submission checks completed; submit the score. """
 
     if app.state.services.datadog:
@@ -733,12 +718,7 @@ async def osuSubmitModular(
             app.state.services.datadog.increment("bancho.submitted_scores_best")
 
         if score.bmap.has_leaderboard:
-            if score.bmap.status == RankedStatus.Loved and score.mode in (
-                GameMode.VANILLA_OSU,
-                GameMode.VANILLA_TAIKO,
-                GameMode.VANILLA_CATCH,
-                GameMode.VANILLA_MANIA,
-            ):
+            if score.bmap.status == RankedStatus.Loved:
                 performance = f"{score.score:,} score"
             else:
                 performance = f"{score.pp:,.2f}pp"
@@ -760,7 +740,7 @@ async def osuSubmitModular(
                 if score.mods:
                     ann.insert(1, f"+{score.mods!r}")
 
-                scoring_metric = "pp" if score.mode >= GameMode.RELAX_OSU else "score"
+                scoring_metric = "pp" 
 
                 # If there was previously a score on the map, add old #1.
                 prev_n1 = await app.state.services.database.fetch_one(
@@ -772,7 +752,7 @@ async def osuSubmitModular(
                     {"map_md5": score.bmap.md5, "mode": score.mode},
                 )
 
-                score_args = ScoreParams(mode=score.mode.as_vanilla)
+                score_args = ScoreParams(mode=score.mode)
                 score_args.mods = score.mods
                 score_args.nmiss = 0
 
@@ -784,27 +764,37 @@ async def osuSubmitModular(
                 payload = {
                   "embeds": [
                     {
-                      "title": f'{score.bmap.title} [{score.bmap.version}] - {result[0]["difficulty"]["stars"]:.2f}★',
-                      "url": f'https://osu.direct/b/{score.bmap.id}',
-                      "description": f'{ranks.get(score.grade.name)} ▸ {score.pp:,.2f}pp ({result[0]["performance"]["pp"]:.2f}pp) ▸ {score.score:,}\n{score.acc:.2f}% ▸ [{score.n300}/{score.n100}/{score.n50}/{score.nmiss}x] ▸ {score.max_combo}/{score.bmap.max_combo}x ▸ {score.mods!r}',
-                      "author": {
-                        "name": "",
-                        "url": f"https://kawaii.pw/u/{score.player.id}"
-                      },
-                      "thumbnail": {
-                        "url": f"https://a.kawaii.pw/{score.player.id}"
-                      },
-                      "image": {
-                        "url": f'https://assets.ppy.sh/beatmaps/{score.bmap.set_id}/covers/cover@2x.jpg'
-                      }
+                        "color": "",
+                        "title": f'{score.bmap.title} [{score.bmap.version}] - {result[0]["difficulty"]["stars"]:.2f}★',
+                        "url": f'https://osu.direct/b/{score.bmap.id}',
+                        "description": f'{ranks.get(score.grade.name)} ▸ {score.pp:,.2f}pp ({result[0]["performance"]["pp"]:.2f}pp) ▸ {score.score:,}\n{score.acc:.2f}% ▸ [{score.n300}/{score.n100}/{score.n50}/{score.nmiss}x] ▸ {score.max_combo}/{score.bmap.max_combo}x ▸ {score.mods!r}',
+                        "author": {
+                            "name": "",
+                            "url": f"https://kawaii.pw/u/{score.player.id}"
+                        },
+                        "thumbnail": {
+                            "url": f"https://a.kawaii.pw/{score.player.id}"
+                        },
+                        "image": {
+                            "url": f'https://assets.ppy.sh/beatmaps/{score.bmap.set_id}/covers/cover@2x.jpg'
+                        }
                     }
                   ],
                   "username": "Score Watcher"
                 }
 
-                if prev_n1:
+                top_pp = await app.state.services.database.fetch_one(
+                    'select max(pp) as h from scores where mode = :mode and map_status = 2',
+                    {"mode": score.mode},
+                )
+
+                if not top_pp['h'] or round(score.pp) > round(top_pp['h']):
+                    payload["embeds"][0]["author"]["name"] = f'[{gamemode_int.get(score.mode)}] {score.player.name} set a new PP Record!'
+                    payload["embeds"][0]["color"] = 51469
+                elif prev_n1:
                     if score.player.id != prev_n1["id"]:
                         payload["embeds"][0]["author"]["name"] = f'[{gamemode_int.get(score.mode)}] {score.player.name} just sniped {prev_n1["name"]}!'
+                        payload["embeds"][0]["color"] = 2829617
                         ann.append(
                             f"(Previous #1: [https://{app.settings.DOMAIN}/u/"
                             "{id} {name}])".format(
@@ -813,8 +803,10 @@ async def osuSubmitModular(
                             ),
                         )
                     else:
+                        payload["embeds"][0]["color"] = 2829617
                         payload["embeds"][0]["author"]["name"] = f'[{gamemode_int.get(score.mode)}] {score.player.name} just sniped themselves!'
                 else:
+                    payload["embeds"][0]["color"] = 2829617
                     payload["embeds"][0]["author"]["name"] = f'[{gamemode_int.get(score.mode)}] {score.player.name} set a new #1!'
 
                 r = apireq.post(f'{app.settings.DISCORD_SCORE_WEBHOOK}', json=payload)
@@ -839,14 +831,15 @@ async def osuSubmitModular(
         score.id = await app.state.services.database.execute(
         "INSERT INTO scores "
         "VALUES (NULL, "
-        ":map_md5, :score, :pp, :acc, "
+        ":map_md5, :map_status, :score, :pp, :acc, "
         ":max_combo, :mods, :n300, :n100, "
         ":n50, :nmiss, :ngeki, :nkatu, "
         ":grade, :status, :mode, :play_time, "
         ":time_elapsed, :client_flags, :user_id, :perfect, "
-        ":checksum, :aim_value, :ar_value, :aim, :arc, :hdr)",  
+        ":checksum, :aim_value, :ar_value, :aim, :arc, :cs, :tw, :twval, :hdr)",  
         {
             "map_md5": score.bmap.md5,
+            "map_status": score.bmap.status,
             "score": score.score,
             "pp": score.pp,
             "acc": score.acc,
@@ -872,6 +865,9 @@ async def osuSubmitModular(
             "aim": aim,
             "arc": arc,
             "hdr": hdr,
+            "cs": cs,
+            "tw": tw,
+            "twval": twval,
         },
     )
 
@@ -906,7 +902,7 @@ async def osuSubmitModular(
     stats.tscore += score.score
     stats.total_hits += score.n300 + score.n100 + score.n50
 
-    if score.mode.as_vanilla in (1, 3):
+    if score.mode in (1, 3) or score.mode in (5, 7):
         # taiko uses geki & katu for hitting big notes with 2 keys
         # mania uses geki & katu for rainbow 300 & 200
         stats.total_hits += score.ngeki + score.nkatu
@@ -991,7 +987,7 @@ async def osuSubmitModular(
 
     await stats_repo.partial_update(
         score.player.id,
-        score.mode.value,
+        score.mode,
         plays=stats_updates.get("plays", UNSET),
         playtime=stats_updates.get("playtime", UNSET),
         tscore=stats_updates.get("tscore", UNSET),
@@ -1032,10 +1028,14 @@ async def osuSubmitModular(
 
     # charts are only displayed for scores on relax/vanilla
     if not score.passed or score.mode not in (
-        GameMode.VANILLA_OSU,
-        GameMode.VANILLA_TAIKO,
-        GameMode.VANILLA_CATCH,
-        GameMode.VANILLA_MANIA,
+        GameMode.REFX_OSU,
+        GameMode.REFX_TAIKO,
+        GameMode.REFX_CATCH,
+        GameMode.REFX_MANIA,
+        GameMode.SHAYMI_OSU,
+        GameMode.SHAYMI_TAIKO,
+        GameMode.SHAYMI_CATCH,
+        GameMode.SHAYMI_MANIA,
     ):
         response = b"error: no"
     else:
@@ -1059,7 +1059,7 @@ async def osuSubmitModular(
                     continue
 
                 achievement_condition = server_achievement["cond"]
-                if achievement_condition(score, score.mode.as_vanilla):
+                if achievement_condition(score, score.mode):
                     await user_achievements_usecases.create(
                         score.player.id,
                         server_achievement["id"],
@@ -1207,6 +1207,8 @@ class LeaderboardType(IntEnum):
     Mods = 2
     Friends = 3
     Country = 4
+    Shaymi = 5
+    ShayMod = 6
 
 
 async def get_leaderboard_scores(
@@ -1305,10 +1307,10 @@ async def getScores(
     player: Player = Depends(authenticate_player_session(Query, "us", "ha")),
     requesting_from_editor_song_select: bool = Query(..., alias="s"),
     leaderboard_version: int = Query(..., alias="vv"),
-    leaderboard_type: int = Query(..., alias="v", ge=0, le=4),
+    leaderboard_type: int = Query(..., alias="v", ge=0, le=6),
     map_md5: str = Query(..., alias="c", min_length=32, max_length=32),
     map_filename: str = Query(..., alias="f"),
-    mode_arg: int = Query(..., alias="m", ge=0, le=3),
+    mode_arg: int = Query(..., alias="m", ge=0, le=7),
     map_set_id: int = Query(..., alias="i", ge=-1, le=2_147_483_647),
     mods_arg: int = Query(..., alias="mods", ge=0, le=2_147_483_647),
     map_package_hash: str = Query(..., alias="h"),  # TODO: further validation
@@ -1325,17 +1327,6 @@ async def getScores(
     if map_md5 in app.state.cache.needs_update:
         return Response(b"1|false")
 
-    if mods_arg & Mods.RELAX:
-        if mode_arg == 3:  # rx!mania doesn't exist
-            mods_arg &= ~Mods.RELAX
-        else:
-            mode_arg += 4
-    elif mods_arg & Mods.AUTOPILOT:
-        if mode_arg in (1, 2, 3):  # ap!catch, taiko and mania don't exist
-            mods_arg &= ~Mods.AUTOPILOT
-        else:
-            mode_arg += 8
-
     mods = Mods(mods_arg)
     mode = GameMode(mode_arg)
 
@@ -1349,7 +1340,7 @@ async def getScores(
             app.state.sessions.players.enqueue(app.packets.user_stats(player))
 
     scoring_metric: Literal["pp", "score"] = (
-        "pp" if mode >= GameMode.RELAX_OSU else "score"
+        "pp"
     )
 
     bmap = await Beatmap.from_md5(map_md5, set_id=map_set_id)

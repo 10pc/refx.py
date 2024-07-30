@@ -9,14 +9,14 @@ from app.utils import escape_enum
 from app.utils import pymysql_encode
 
 GAMEMODE_REPR_LIST = (
-    "vn!std",
-    "vn!taiko",
-    "vn!catch",
-    "vn!mania",
-    "rx!std",
-    "rx!taiko",
-    "rx!catch",
-    "rx!mania",  # unused
+    "re;fx!std",
+    "re;fx!taiko",
+    "re;fx!catch",
+    "re;fx!mania",
+    "shaymi!std",
+    "shaymi!taiko",
+    "shaymi!catch",
+    "shaymi!mania",  # unused
     "ap!std",
     "ap!taiko",  # unused
     "ap!catch",  # unused
@@ -27,15 +27,15 @@ GAMEMODE_REPR_LIST = (
 @unique
 @pymysql_encode(escape_enum)
 class GameMode(IntEnum):
-    VANILLA_OSU = 0
-    VANILLA_TAIKO = 1
-    VANILLA_CATCH = 2
-    VANILLA_MANIA = 3
+    REFX_OSU = 0
+    REFX_TAIKO = 1
+    REFX_CATCH = 2
+    REFX_MANIA = 3
 
-    RELAX_OSU = 4
-    RELAX_TAIKO = 5
-    RELAX_CATCH = 6
-    RELAX_MANIA = 7  # unused
+    SHAYMI_OSU = 4
+    SHAYMI_TAIKO = 5
+    SHAYMI_CATCH = 6
+    SHAYMI_MANIA = 7
 
     AUTOPILOT_OSU = 8
     AUTOPILOT_TAIKO = 9  # unused
@@ -59,7 +59,6 @@ class GameMode(IntEnum):
         ret = []
         for mode in cls:
             if mode not in (
-                cls.RELAX_MANIA,
                 cls.AUTOPILOT_TAIKO,
                 cls.AUTOPILOT_CATCH,
                 cls.AUTOPILOT_MANIA,

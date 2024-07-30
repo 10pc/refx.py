@@ -248,7 +248,7 @@ class Score:
         s.grade = Grade.from_str(data[10])
         s.mods = Mods(int(data[11]))
         s.passed = data[12] == "True"
-        s.mode = GameMode.from_params(int(data[13]), s.mods)
+        s.mode = int(data[13])
         s.client_time = datetime.strptime(data[14], "%y%m%d%H%M%S")
         s.client_flags = ClientFlags(data[15].count(" ") & ~4)
 
@@ -283,7 +283,7 @@ class Score:
                 self.grade.name,
                 int(self.mods),
                 self.passed,
-                self.mode.as_vanilla,
+                self.mode,
                 self.client_time,
                 osu_version,  # 20210520
                 osu_client_hash,
@@ -297,12 +297,8 @@ class Score:
     async def calculate_placement(self) -> int:
         assert self.bmap is not None
 
-        if self.mode >= GameMode.RELAX_OSU:
-            scoring_metric = "pp"
-            score = self.pp
-        else:
-            scoring_metric = "score"
-            score = self.score
+        scoring_metric = "pp"
+        score = self.pp
 
         num_better_scores: int | None = await app.state.services.database.fetch_val(
             "SELECT COUNT(*) AS c FROM scores s "
@@ -322,12 +318,11 @@ class Score:
 
     async def calculate_performance(self, beatmap_id: int) -> tuple[float, float]:
         """Calculate PP and star rating for our score."""
-        mode_vn = self.mode.as_vanilla
 
-          # Add RELAX to mods
+        mode = self.mode % 4
 
         score_args = ScoreParams(
-            mode=mode_vn,
+            mode=mode,
             mods=int(self.mods),
             combo=self.max_combo,
             ngeki=self.ngeki,
@@ -379,9 +374,8 @@ class Score:
 
     def calculate_accuracy(self) -> float:
         """Calculate the accuracy of our score."""
-        mode_vn = self.mode.as_vanilla
 
-        if mode_vn == 0:  # osu!
+        if self.mode == 0 or self.mode == 4:  # osu!
             total = self.n300 + self.n100 + self.n50 + self.nmiss
 
             if total == 0:
@@ -393,7 +387,7 @@ class Score:
                 / (total * 300.0)
             )
 
-        elif mode_vn == 1:  # osu!taiko
+        elif self.mode == 1 or self.mode == 5:  # osu!taiko
             total = self.n300 + self.n100 + self.nmiss
 
             if total == 0:
@@ -401,7 +395,7 @@ class Score:
 
             return 100.0 * ((self.n100 * 0.5) + self.n300) / total
 
-        elif mode_vn == 2:  # osu!catch
+        elif self.mode == 2 or self.mode == 6:  # osu!catch
             total = self.n300 + self.n100 + self.n50 + self.nkatu + self.nmiss
 
             if total == 0:
@@ -409,7 +403,7 @@ class Score:
 
             return 100.0 * (self.n300 + self.n100 + self.n50) / total
 
-        elif mode_vn == 3:  # osu!mania
+        elif self.mode == 3 or self.mode == 7:  # osu!mania
             total = (
                 self.n300 + self.n100 + self.n50 + self.ngeki + self.nkatu + self.nmiss
             )
@@ -441,7 +435,7 @@ class Score:
                 / (total * 300.0)
             )
         else:
-            raise Exception(f"Invalid vanilla mode {mode_vn}")
+            raise Exception(f"Invalid vanilla mode {self.mode}")
 
     """ Methods for updating a score. """
 

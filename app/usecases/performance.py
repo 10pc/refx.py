@@ -88,10 +88,11 @@ def calculate_performances(
         if score.mods is not None:
             if score.mods & Mods.NIGHTCORE:
                 score.mods |= Mods.DOUBLETIME
+            score.mods |= Mods.RELAX
 
         calculator = Calculator(
-            mode=score.mode,
-            mods=score.mods or 0,
+            mode=score.mode % 4,
+            mods=score.mods or 128,
             combo=score.combo,
             acc=score.acc,
             n300=score.n300,
@@ -103,7 +104,8 @@ def calculate_performances(
         )
         result = calculator.performance(calc_bmap)
 
-        pp = result.pp
+        nerf = result.pp_speed * 0.3
+        pp = result.pp + nerf
 
         if math.isnan(pp) or math.isinf(pp):
             # TODO: report to logserver

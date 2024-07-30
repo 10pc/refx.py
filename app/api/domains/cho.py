@@ -417,7 +417,7 @@ class SendMessage(BasePacket):
                         ]
                     else:
                         # use player mode if not specified
-                        mode_vn = player.status.mode.as_vanilla
+                        mode_vn = player.status.mode
 
                     # parse the mods from regex
                     mods = None
@@ -1241,7 +1241,7 @@ class SendPrivateMessage(BasePacket):
                             ]
                         else:
                             # use player mode if not specified
-                            mode_vn = player.status.mode.as_vanilla
+                            mode_vn = player.status.mode
 
                         # parse the mods from regex
                         mods = None
@@ -1623,7 +1623,7 @@ class MatchChangeSettings(BasePacket):
                 player.match.map_id = bmap.id
                 player.match.map_md5 = bmap.md5
                 player.match.map_name = bmap.full_name
-                player.match.mode = GameMode(player.match.host.status.mode.as_vanilla)
+                player.match.mode = GameMode(player.match.host.status.mode)
             else:
                 player.match.map_id = self.match_data.map_id
                 player.match.map_md5 = self.match_data.map_md5

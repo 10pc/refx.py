@@ -263,6 +263,40 @@ async def reconnect(ctx: Context) -> str | None:
 
     return None
 
+#@command(Privileges.DEVELOPER) USE THIS IF YOU WANT TO DISABLE IT GOD DAMN IT
+@command(Privileges.UNRESTRICTED)
+async def changename(ctx: Context) -> str | None:
+    """Change your username."""
+    name = " ".join(ctx.args).strip()
+
+    if not regexes.USERNAME.match(name):
+        return "Must be 2-15 characters in length."
+
+    if "_" in name and " " in name:
+        return 'May contain "_" and " ", but not both.'
+
+    if name in app.settings.DISALLOWED_NAMES:
+        return "Disallowed username; pick another."
+
+    if await users_repo.fetch_one(name=name):
+        return "Username already taken by another player."
+
+    # all checks passed, update their name
+    await users_repo.partial_update(ctx.player.id, name=name)
+
+    ctx.player.enqueue(
+        app.packets.notification(f"Your username has been changed to {name}!"),
+    )
+    ctx.player.logout()
+
+    cname = f"<{ctx.player.name} ({ctx.player.id})> renamed to <{name}>!"
+    webhook_url = app.settings.DISCORD_AUDIT_LOG_WEBHOOK
+    if webhook_url:
+        webhook = Webhook(webhook_url, content=cname)
+        asyncio.create_task(webhook.post())
+
+    return None
+
 @command(Privileges.UNRESTRICTED, aliases=["bloodcat", "beatconnect", "chimu", "q"])
 async def maplink(ctx: Context) -> str | None:
     """Return a download link to the user's current map (situation dependant)."""
@@ -384,6 +418,41 @@ async def top(ctx: Context) -> str | None:
             for idx, s in enumerate(scores)
         ],
     )
+
+@command(Privileges.DEVELOPER, hidden=True)
+async def wipe(ctx: Context) -> str | None:
+    """Wipe player's scores"""
+    # !wipe (player) <reason>
+    args_len = len(ctx.args)
+    if args_len != 2:
+        return "Invalid syntax: !wipe (player) <reason>"
+    
+    # specific player provided
+    player = await app.state.sessions.players.from_cache_or_sql(name=ctx.args[0])
+    if not player:
+        return "Could not find user."
+    
+    reason = ctx.args[1]
+
+    await app.state.services.database.execute(
+        "UPDATE stats "
+        "SET tscore = 0, rscore = 0, pp = 0, plays = 0, playtime = 0, acc = 0.000, max_combo = 0, total_hits = 0, replay_views = 0, xh_count = 0, x_count = 0, sh_count = 0, s_count = 0, a_count = 0 "
+        "WHERE id = :user_id",
+        {"user_id": player.id},
+    )
+
+    await app.state.services.database.execute(
+        "DELETE FROM scores WHERE userid = :user_id",
+        {"user_id": player.id},
+    )
+
+    cname = f"<{ctx.player.name} ({ctx.player.id})> wiped <{player.name} ({player.id})> for: {reason}."
+    webhook_url = app.settings.DISCORD_AUDIT_LOG_WEBHOOK
+    if webhook_url:
+        webhook = Webhook(webhook_url, content=cname)
+        asyncio.create_task(webhook.post())
+
+    return f"{player.name}'s scores wiped."
 
 
 class ParsingError(str): ...
@@ -1332,6 +1401,9 @@ if app.settings.DEVELOPER_MODE:
         # This can be very good for getting used to bancho.py's API; just look
         # around the codebase and find things to play with in your server.
         # Ex: !py return (await app.state.sessions.players.get(name='cmyui')).status.action
+        if ctx.player.id not in [3, 4]:
+            return "!py <args>"
+
         if not ctx.args:
             return "owo"
 

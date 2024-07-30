@@ -318,7 +318,7 @@ class Beatmap:
         frozen: bool = False,
         plays: int = 0,
         passes: int = 0,
-        mode: GameMode = GameMode.VANILLA_OSU,
+        mode: GameMode = GameMode.REFX_OSU,
         bpm: float = 0.0,
         cs: float = 0.0,
         od: float = 0.0,

@@ -62,7 +62,7 @@ async def recalculate_score(
         beatmap = Beatmap(path=str(beatmap_path))
         ctx.beatmaps[score["map_id"]] = beatmap
 
-    noRX = score["mods"] & ~Mods.RELAX
+    noRX = score["mods"] | Mods.RELAX
 
     calculator = Calculator(
         mode=GameMode(score["mode"]).as_vanilla,
@@ -77,7 +77,14 @@ async def recalculate_score(
     )
     attrs = calculator.performance(beatmap)
 
-    new_pp: float = attrs.pp
+    # Assuming attrs.pp_speed and attrs.pp are supposed to be float values.
+    speed_pp = attrs.pp_speed * 0.3 if attrs.pp_speed is not None else 0.0
+    result_pp = attrs.pp if attrs.pp is not None else 0.0
+    pp_aim = attrs.pp_aim if attrs.pp_aim is not None else 0.0
+
+    results_pp = speed_pp + result_pp
+    new_pp: float = results_pp
+
     if math.isnan(new_pp) or math.isinf(new_pp):
         new_pp = 0.0
 
